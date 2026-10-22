@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8f7fc;
+  --foreground: #1c1a24;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-urdu: var(--font-nastaliq), "Noto Nastaliq Urdu", serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Nastaliq script needs extra line height so letters don't overlap. */
+.urdu {
+  font-family: var(--font-nastaliq), "Noto Nastaliq Urdu", serif;
+  line-height: 2.2;
+  direction: rtl;
+  text-align: right;
+}
