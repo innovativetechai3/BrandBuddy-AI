@@ -79,7 +79,7 @@ After this, every time new code is merged into `main`, Vercel redeploys automati
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `GEMINI_MODEL` | `gemini-flash-latest` | Which Gemini model to use. Change it if Google renames or retires a model. |
+| `GEMINI_MODEL` | (empty) | A Gemini model to try first. If unset, the app tries `gemini-3.5-flash`, then `gemini-flash-lite-latest`, then `gemini-flash-latest`, moving on whenever one is busy or retired. |
 | `DAILY_LIMIT_PER_VISITOR` | `20` | Maximum generations per visitor per day, to protect your free quota. |
 
 ## Free-tier limitations (PKR 0 budget)

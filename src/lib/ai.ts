@@ -9,7 +9,8 @@ import {
 // All AI calls live here so the provider (or a paid tier) can be swapped later
 // without touching the UI. This file never reaches the browser ("server-only").
 
-const DEFAULT_MODEL = "gemini-flash-latest";
+// Tried in order. GEMINI_MODEL, if set, is tried first.
+const FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-flash-latest"];
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export class AIError extends Error {
@@ -76,37 +77,45 @@ export async function generateContentPack(req: GenerateRequest): Promise<Content
       500,
     );
   }
-  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
-
   const properties = Object.fromEntries(req.languages.map((l) => [l, languagePackJsonSchema]));
-
-  const res = await fetch(`${API_BASE}/${encodeURIComponent(model)}:generateContent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: [{ role: "user", parts: [{ text: buildUserPrompt(req) }] }],
-      generationConfig: {
-        temperature: 0.9,
-        responseMimeType: "application/json",
-        responseSchema: { type: "OBJECT", properties, required: req.languages },
-      },
-    }),
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [{ role: "user", parts: [{ text: buildUserPrompt(req) }] }],
+    generationConfig: {
+      temperature: 0.9,
+      responseMimeType: "application/json",
+      responseSchema: { type: "OBJECT", properties, required: req.languages },
+    },
   });
 
-  if (!res.ok) {
+  // Free-tier models are often briefly overloaded (503), rate limited (429) or
+  // retired (404), so try the next model in the list before giving up.
+  const models = [...new Set([process.env.GEMINI_MODEL, ...FALLBACK_MODELS].filter(Boolean) as string[])];
+  let res: Response | undefined;
+  let lastStatus = 0;
+  for (const model of models) {
+    res = await fetch(`${API_BASE}/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      body,
+    });
+    if (res.ok) break;
+    lastStatus = res.status;
     const detail = await res.text().catch(() => "");
-    console.error("Gemini error", res.status, detail.slice(0, 500));
-    if (res.status === 429) {
+    console.error("Gemini error", model, res.status, detail.slice(0, 500));
+    if (res.status === 400 || res.status === 401 || res.status === 403) {
+      throw new AIError("Gemini rejected the request. Check that GEMINI_API_KEY is valid.", 502);
+    }
+  }
+
+  if (!res?.ok) {
+    if (lastStatus === 429) {
       throw new AIError(
         "The free Gemini quota is used up for now. Please wait a minute and try again (daily limits reset at midnight Pacific time).",
         429,
       );
     }
-    if (res.status === 400 || res.status === 403) {
-      throw new AIError("Gemini rejected the request. Check that GEMINI_API_KEY is valid.", 502);
-    }
-    throw new AIError("The AI service is busy. Please try again in a moment.", 502);
+    throw new AIError("Google's free AI models are busy right now. Please try again in a minute.", 503);
   }
 
   const data = await res.json();
