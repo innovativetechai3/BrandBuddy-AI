@@ -1,106 +1,92 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   BUSINESS_TYPES,
+  GOALS,
   LANGUAGES,
   LANGUAGE_LABELS,
+  OCCASIONS,
   PLATFORMS,
   TONES,
+  type Brief,
   type ContentPack,
-  type GenerateRequest,
   type Language,
+  type PartialPack,
+  type Section,
 } from "@/lib/schema";
-import {
-  addToHistory,
-  clearHistory,
-  DEFAULT_BRAND,
-  loadBrandKit,
-  loadHistory,
-  saveBrandKit,
-  type BrandKit,
-  type HistoryItem,
-} from "@/lib/storage";
+import { EMPTY_BRIEF, EXAMPLE_BRIEF, NICHE_PRESETS } from "@/lib/presets";
+import { addToHistory, clearHistory, loadHistory, type BrandKit, type HistoryItem } from "@/lib/storage";
+import { useBrandKits } from "@/lib/useBrandKits";
 import Results from "./Results";
+import { Field, inputClass } from "./ui";
 
-type FormState = Omit<GenerateRequest, "brand">;
+type Current = { id: string; brief: Brief; pack: ContentPack };
 
-const EMPTY_FORM: FormState = {
-  product: "",
-  details: "",
-  audience: "",
-  businessType: "Clothing brand",
-  tone: "Friendly",
-  platform: "Instagram",
-  languages: ["english", "urdu", "romanUrdu"],
-};
+async function callApi(brief: Brief, kit: BrandKit | undefined, section?: Section) {
+  const res = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      brief,
+      brand: { name: kit?.name ?? "", tagline: kit?.tagline ?? "", voice: kit?.voice ?? "", bannedWords: kit?.bannedWords ?? "" },
+      section,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Something went wrong. Please try again.");
+  return data as { pack: ContentPack | PartialPack; remaining: number };
+}
 
-const EXAMPLE_FORM: FormState = {
-  product: "Embroidered lawn suits – summer collection",
-  details: "3-piece unstitched, pure cotton, 12 designs, free delivery across Karachi",
-  audience: "Women aged 20–40 in Karachi and Lahore who shop on Instagram",
-  businessType: "Clothing brand",
-  tone: "Festive",
-  platform: "Instagram",
-  languages: ["english", "urdu", "romanUrdu"],
-};
-
-const inputClass =
-  "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-200";
+// Puts one regenerated section into the existing pack.
+function mergeSection(pack: ContentPack, update: PartialPack): ContentPack {
+  const languages = { ...pack.languages };
+  for (const l of Object.keys(update.languages ?? {}) as Language[]) {
+    const current = languages[l];
+    const patch = update.languages?.[l];
+    if (current && patch) languages[l] = { ...current, ...patch };
+  }
+  return { hashtags: update.hashtags ?? pack.hashtags, languages };
+}
 
 export default function Studio() {
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [brand, setBrand] = useState<BrandKit>(DEFAULT_BRAND);
+  const { kits, active: kit, selectKit } = useBrandKits();
+  const [brief, setBrief] = useState<Brief>(EMPTY_BRIEF);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [pack, setPack] = useState<ContentPack | null>(null);
+  const [current, setCurrent] = useState<Current | null>(null);
   const [loading, setLoading] = useState(false);
+  const [regenerating, setRegenerating] = useState<Section | null>(null);
   const [error, setError] = useState("");
   const [remaining, setRemaining] = useState<number | null>(null);
 
-  // localStorage only exists in the browser, so load it after the first render.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setBrand(loadBrandKit());
     setHistory(loadHistory());
   }, []);
 
-  function updateBrand(patch: Partial<BrandKit>) {
-    const next = { ...brand, ...patch };
-    setBrand(next);
-    saveBrandKit(next);
-  }
+  const preset = NICHE_PRESETS[brief.businessType];
+  const set = (patch: Partial<Brief>) => setBrief((b) => ({ ...b, ...patch }));
 
-  function toggleLanguage(lang: Language) {
-    setForm((f) => ({
-      ...f,
-      languages: f.languages.includes(lang) ? f.languages.filter((l) => l !== lang) : [...f.languages, lang],
-    }));
+  function save(next: Current) {
+    setCurrent(next);
+    setHistory(addToHistory({ ...next, createdAt: new Date().toISOString() }));
   }
 
   async function generate(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (form.languages.length === 0) {
+    if (brief.languages.length === 0) {
       setError("Pick at least one language.");
       return;
     }
     setLoading(true);
-    const request: GenerateRequest = { ...form, brand: { name: brand.name, tagline: brand.tagline } };
     try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Something went wrong. Please try again.");
-      setPack(data.pack);
+      const data = await callApi(brief, kit);
+      save({ id: crypto.randomUUID(), brief, pack: data.pack as ContentPack });
+      setRemaining(data.remaining);
       // On phones the results sit below the form, so bring them into view.
       requestAnimationFrame(() => document.getElementById("results")?.scrollIntoView({ behavior: "smooth" }));
-      setRemaining(typeof data.remaining === "number" ? data.remaining : null);
-      setHistory(
-        addToHistory({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), request, pack: data.pack }),
-      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -108,110 +94,138 @@ export default function Studio() {
     }
   }
 
-  return (
-    <div className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[380px_1fr]">
-      <div className="space-y-6">
-        <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-          <h2 className="mb-1 font-semibold">Brand kit</h2>
-          <p className="mb-4 text-xs text-gray-500">Saved in this browser and used on every post image.</p>
-          <div className="space-y-3">
-            <input
-              className={inputClass}
-              placeholder="Brand name (e.g. Ayesha's Closet)"
-              value={brand.name}
-              maxLength={60}
-              onChange={(e) => updateBrand({ name: e.target.value })}
-            />
-            <input
-              className={inputClass}
-              placeholder="Tagline (optional)"
-              value={brand.tagline}
-              maxLength={120}
-              onChange={(e) => updateBrand({ tagline: e.target.value })}
-            />
-            <div className="flex gap-4 text-sm">
-              <label className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={brand.primaryColor}
-                  onChange={(e) => updateBrand({ primaryColor: e.target.value })}
-                  className="h-8 w-10 cursor-pointer rounded border border-gray-300"
-                />
-                Main colour
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={brand.accentColor}
-                  onChange={(e) => updateBrand({ accentColor: e.target.value })}
-                  className="h-8 w-10 cursor-pointer rounded border border-gray-300"
-                />
-                Accent
-              </label>
-            </div>
-          </div>
-        </section>
+  async function regenerate(section: Section) {
+    if (!current) return;
+    setRegenerating(section);
+    setError("");
+    try {
+      const data = await callApi(current.brief, kit, section);
+      save({ ...current, pack: mergeSection(current.pack, data.pack as PartialPack) });
+      setRemaining(data.remaining);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setRegenerating(null);
+    }
+  }
 
+  return (
+    <div className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="min-w-0 space-y-6">
         <form onSubmit={generate} className="space-y-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold">What are you promoting?</h2>
+            <h2 className="font-semibold">Your brief</h2>
             <button
               type="button"
-              onClick={() => setForm(EXAMPLE_FORM)}
+              onClick={() => setBrief(EXAMPLE_BRIEF)}
               className="text-xs font-medium text-violet-600 hover:underline"
             >
               Try an example
             </button>
           </div>
 
+          <Field label="Brand kit">
+            <div className="flex gap-2">
+              <select className={inputClass} value={kit?.id ?? ""} onChange={(e) => selectKit(e.target.value)}>
+                {kits.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.name || "Untitled brand"}
+                  </option>
+                ))}
+              </select>
+              <Link
+                href="/brand-kit"
+                className="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-violet-700 ring-1 ring-violet-200 hover:bg-violet-50"
+              >
+                Edit
+              </Link>
+            </div>
+          </Field>
+
+          <Field label="Business type">
+            <select
+              className={inputClass}
+              value={brief.businessType}
+              onChange={(e) => {
+                const businessType = e.target.value as Brief["businessType"];
+                const p = NICHE_PRESETS[businessType];
+                set({ businessType, tone: p.tone, goal: p.goal, platform: p.platform });
+              }}
+            >
+              {BUSINESS_TYPES.map((b) => (
+                <option key={b}>{b}</option>
+              ))}
+            </select>
+          </Field>
+
           <Field label="Product or service *">
             <input
               className={inputClass}
-              value={form.product}
+              value={brief.product}
               maxLength={120}
               required
-              placeholder="e.g. Chicken biryani family deal"
-              onChange={(e) => setForm({ ...form, product: e.target.value })}
+              placeholder={preset.product}
+              onChange={(e) => set({ product: e.target.value })}
             />
           </Field>
           <Field label="Details (optional)">
             <textarea
               className={inputClass}
-              rows={3}
-              value={form.details}
+              rows={2}
+              value={brief.details}
               maxLength={500}
-              placeholder="Price, offer, ingredients, fabric, delivery area…"
-              onChange={(e) => setForm({ ...form, details: e.target.value })}
+              placeholder="Fabric, ingredients, sizes, delivery area…"
+              onChange={(e) => set({ details: e.target.value })}
             />
           </Field>
           <Field label="Target audience *">
             <input
               className={inputClass}
-              value={form.audience}
+              value={brief.audience}
               maxLength={200}
               required
-              placeholder="e.g. Families in Lahore who order dinner online"
-              onChange={(e) => setForm({ ...form, audience: e.target.value })}
+              placeholder={preset.audience}
+              onChange={(e) => set({ audience: e.target.value })}
+            />
+          </Field>
+          <Field label="Offer (optional)">
+            <input
+              className={inputClass}
+              value={brief.offer}
+              maxLength={150}
+              placeholder="e.g. 20% off till Sunday, free delivery"
+              onChange={(e) => set({ offer: e.target.value })}
             />
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Business type">
+            <Field label="Goal">
               <select
                 className={inputClass}
-                value={form.businessType}
-                onChange={(e) => setForm({ ...form, businessType: e.target.value as FormState["businessType"] })}
+                value={brief.goal}
+                onChange={(e) => set({ goal: e.target.value as Brief["goal"] })}
               >
-                {BUSINESS_TYPES.map((b) => (
-                  <option key={b}>{b}</option>
+                {GOALS.map((g) => (
+                  <option key={g}>{g}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Occasion">
+              <select
+                className={inputClass}
+                value={brief.occasion}
+                onChange={(e) => set({ occasion: e.target.value as Brief["occasion"] })}
+              >
+                {OCCASIONS.map((o) => (
+                  <option key={o}>{o}</option>
                 ))}
               </select>
             </Field>
             <Field label="Tone">
               <select
                 className={inputClass}
-                value={form.tone}
-                onChange={(e) => setForm({ ...form, tone: e.target.value as FormState["tone"] })}
+                value={brief.tone}
+                onChange={(e) => set({ tone: e.target.value as Brief["tone"] })}
               >
                 {TONES.map((t) => (
                   <option key={t}>{t}</option>
@@ -221,8 +235,8 @@ export default function Studio() {
             <Field label="Platform">
               <select
                 className={inputClass}
-                value={form.platform}
-                onChange={(e) => setForm({ ...form, platform: e.target.value as FormState["platform"] })}
+                value={brief.platform}
+                onChange={(e) => set({ platform: e.target.value as Brief["platform"] })}
               >
                 {PLATFORMS.map((p) => (
                   <option key={p}>{p}</option>
@@ -235,12 +249,14 @@ export default function Studio() {
             <legend className="mb-2 text-sm font-medium">Languages</legend>
             <div className="flex flex-wrap gap-2">
               {LANGUAGES.map((lang) => {
-                const on = form.languages.includes(lang);
+                const on = brief.languages.includes(lang);
                 return (
                   <button
                     type="button"
                     key={lang}
-                    onClick={() => toggleLanguage(lang)}
+                    onClick={() =>
+                      set({ languages: on ? brief.languages.filter((l) => l !== lang) : [...brief.languages, lang] })
+                    }
                     aria-pressed={on}
                     className={`rounded-full px-3 py-1.5 text-sm ring-1 transition ${
                       on ? "bg-violet-600 text-white ring-violet-600" : "bg-white text-gray-700 ring-gray-300"
@@ -251,6 +267,7 @@ export default function Studio() {
                 );
               })}
             </div>
+            <p className="mt-1 text-xs text-gray-500">Fewer languages = faster results.</p>
           </fieldset>
 
           {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -260,7 +277,7 @@ export default function Studio() {
             disabled={loading}
             className="w-full rounded-lg bg-violet-600 px-4 py-2.5 font-semibold text-white transition hover:bg-violet-700 disabled:opacity-60"
           >
-            {loading ? "Writing your content…" : "Generate content"}
+            {loading ? "Writing your content pack…" : "Generate content pack"}
           </button>
           {remaining !== null && (
             <p className="text-center text-xs text-gray-500">{remaining} free generations left today</p>
@@ -270,7 +287,7 @@ export default function Studio() {
         {history.length > 0 && (
           <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-semibold">Recent</h2>
+              <h2 className="font-semibold">Recent packs</h2>
               <button
                 type="button"
                 className="text-xs text-gray-500 hover:underline"
@@ -288,12 +305,12 @@ export default function Studio() {
                   <button
                     type="button"
                     onClick={() => {
-                      setPack(h.pack);
-                      setForm({ ...EMPTY_FORM, ...h.request });
+                      setCurrent({ id: h.id, brief: h.brief, pack: h.pack });
+                      setBrief(h.brief);
                     }}
                     className="w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-100"
                   >
-                    {h.request.product}
+                    {h.brief.product}
                     <span className="ml-2 text-xs text-gray-400">{new Date(h.createdAt).toLocaleDateString()}</span>
                   </button>
                 </li>
@@ -304,31 +321,30 @@ export default function Studio() {
       </div>
 
       <div id="results" className="min-w-0 scroll-mt-4">
-        {pack ? (
-          <Results pack={pack} brand={brand} />
+        {current && kit ? (
+          <Results
+            key={current.id}
+            pack={current.pack}
+            kit={kit}
+            product={current.brief.product}
+            regenerating={regenerating}
+            onRegenerate={regenerate}
+            onPackChange={(pack) => save({ ...current, pack })}
+          />
         ) : (
           <div className="flex h-full min-h-64 items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 p-8 text-center text-gray-500">
             {loading ? (
-              <p>Creating captions, descriptions, hashtags and ideas…</p>
+              <p>Writing captions, hashtags, CTAs, a 7-day plan and a carousel… this can take up to a minute.</p>
             ) : (
               <p>
-                Fill in the form and press <strong>Generate content</strong>.
+                Fill in the brief and press <strong>Generate content pack</strong>.
                 <br />
-                Your results will appear here.
+                You&apos;ll get captions, hashtags, CTAs, a 7-day plan and a 5-slide carousel.
               </p>
             )}
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium">{label}</span>
-      {children}
-    </label>
   );
 }

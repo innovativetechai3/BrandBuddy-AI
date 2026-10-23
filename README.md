@@ -6,15 +6,18 @@ BrandBuddy AI helps small businesses, clothing brands, restaurants, beauty busin
 
 ## Features
 
-- Generate 3 social media captions and a product description for any product or service.
-- Create content in **English**, **Urdu** (Nastaliq script, right-to-left) and **Roman Urdu**.
-- Generate relevant hashtags and 3 campaign ideas.
-- Choose business type, tone (friendly, festive, luxury…) and platform (Instagram, Facebook, WhatsApp, TikTok).
-- Brand kit (name, tagline, two colours) saved in your browser.
-- Download any caption as a branded square **PNG** image, ready to post.
-- Copy buttons for captions, descriptions and hashtags.
-- Last 10 generations saved in your browser ("Recent").
-- Works on phones, tablets and desktops.
+- **Content brief:** product, details, audience, business type, goal, offer, occasion (Ramadan, Eid, 14 August, wedding season, sales…), tone and platform. Picking a business type pre-fills sensible defaults.
+- **Four languages:** English, Urdu (Nastaliq script, right-to-left), Roman Urdu, and Mixed (English with Urdu phrases).
+- **One click = a full content pack** for each language:
+  - 3 captions (short, medium, long), each downloadable as a branded square PNG
+  - 15 hashtags in three tiers (broad, niche, local) and 5 calls to action
+  - a 7-day posting plan with format, idea, ready caption and best time to post
+  - an editable 5-slide carousel
+  - a product description and 3 campaign ideas
+- **Regenerate one section** (e.g. only the hashtags) without redoing the whole pack.
+- **Carousel editor:** 3 layouts, edit text and colours, add a product photo, download one slide as PNG or all five as a ZIP (1080 × 1350 px, Instagram portrait size).
+- **Brand kits:** several kits with name, tagline, logo, three colours, font style, voice notes and banned words. The AI follows the voice notes and avoids banned words. Export and import kits as a JSON file.
+- Copy buttons everywhere, last 10 packs saved in the browser, works on phones, tablets and desktops.
 
 ## Technology
 
@@ -41,17 +44,24 @@ Browser  ──POST /api/generate──▶  Vercel server function  ──▶  G
 ```
 src/
   app/
-    page.tsx              Home page
-    layout.tsx            Fonts (incl. Noto Nastaliq Urdu) and page shell
+    page.tsx              Studio (brief + results)
+    brand-kit/page.tsx    Brand kit editor
+    layout.tsx            Fonts (Geist, Playfair Display, Poppins, Noto Nastaliq Urdu)
     api/generate/route.ts Server API route: validates input, applies daily limit, calls Gemini
   components/
-    Studio.tsx            Form, brand kit and history
-    Results.tsx           Language tabs, captions, PNG export, copy buttons
+    Studio.tsx            Brief form, history, generate and regenerate
+    Results.tsx           Language switch, tabs, caption images
+    CarouselEditor.tsx    Slide editing and PNG / ZIP export
+    Slide.tsx             The 3 slide layouts at 1080 × 1350
+    BrandKitEditor.tsx    Brand kit form, import / export
   lib/
-    ai.ts                 Gemini call + prompt (server only)
+    ai.ts                 Gemini call, model fallback, retry (server only)
+    prompts.ts            System prompt, language guides, section rules
     schema.ts             Input/output validation (Zod)
+    presets.ts            Niche defaults and the example brief
+    storage.ts            Browser storage (brand kits, history)
+    export.ts             PNG and ZIP export
     rateLimit.ts          Simple per-visitor daily cap
-    storage.ts            Browser storage helpers
 .env.example              List of environment variables (no real values)
 ```
 
@@ -106,4 +116,4 @@ User accounts, payments, and posting directly to social media are planned for la
 
 ## Project Status
 
-First working version (MVP).
+MVP features complete; next step is a pilot with 10–30 real businesses.

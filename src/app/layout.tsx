@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Noto_Nastaliq_Urdu } from "next/font/google";
+import { Geist, Noto_Nastaliq_Urdu, Playfair_Display, Poppins } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -11,6 +11,19 @@ const nastaliq = Noto_Nastaliq_Urdu({
   variable: "--font-nastaliq",
   subsets: ["arabic"],
   weight: ["400", "700"],
+});
+
+// Used by the brand kit's "Classic" and "Bold" font pairs on slides and post images.
+const classic = Playfair_Display({
+  variable: "--font-classic",
+  subsets: ["latin"],
+  weight: ["600", "700"],
+});
+
+const bold = Poppins({
+  variable: "--font-bold",
+  subsets: ["latin"],
+  weight: ["600", "800"],
 });
 
 export const metadata: Metadata = {
@@ -26,7 +39,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${nastaliq.variable} h-full antialiased`}>
+    <html lang="en" className={`${geistSans.variable} ${nastaliq.variable} ${classic.variable} ${bold.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

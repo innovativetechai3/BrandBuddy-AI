@@ -1,4 +1,4 @@
-import { generateContentPack, AIError } from "@/lib/ai";
+import { generate, AIError } from "@/lib/ai";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { generateRequestSchema } from "@/lib/schema";
 
@@ -25,8 +25,9 @@ export async function POST(request: Request) {
     );
   }
 
+  const { brief, brand, section } = parsed.data;
   try {
-    const pack = await generateContentPack(parsed.data);
+    const pack = section ? await generate(brief, brand, section) : await generate(brief, brand);
     return Response.json({ pack, remaining: limit.remaining });
   } catch (err) {
     if (err instanceof AIError) {
